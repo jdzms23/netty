@@ -43,7 +43,7 @@ import static org.junit.Assume.assumeNoException;
 @RunWith(Parameterized.class)
 public class JdkSslEngineTest extends SSLEngineTest {
     public enum ProviderType {
-        NPN_DEFAULT {
+        NPN_JETTY {
             @Override
             boolean isAvailable() {
                 return JettyNpnSslEngine.isAvailable();
@@ -59,10 +59,27 @@ public class JdkSslEngineTest extends SSLEngineTest {
                 return null;
             }
         },
-        ALPN_DEFAULT {
+        ALPN_JETTY {
             @Override
             boolean isAvailable() {
                 return JettyAlpnSslEngine.isAvailable();
+            }
+
+            @Override
+            Protocol protocol() {
+                return Protocol.ALPN;
+            }
+
+            @Override
+            Provider provider() {
+                // Use the default provider.
+                return null;
+            }
+        },
+        ALPN_JAVA9 {
+            @Override
+            boolean isAvailable() {
+                return Java9SslUtils.supportsAlpn();
             }
 
             @Override
@@ -178,7 +195,7 @@ public class JdkSslEngineTest extends SSLEngineTest {
     public void testTlsExtensionNoCompatibleProtocolsClientHandshakeFailure() throws Exception {
         try {
             providerType.activate(this);
-            if (providerType == ProviderType.NPN_DEFAULT) {
+            if (providerType == ProviderType.NPN_JETTY) {
                 ApplicationProtocolConfig clientApn = failingNegotiator(providerType.protocol(),
                     PREFERRED_APPLICATION_LEVEL_PROTOCOL);
                 ApplicationProtocolConfig serverApn = acceptingNegotiator(providerType.protocol(),
@@ -249,7 +266,7 @@ public class JdkSslEngineTest extends SSLEngineTest {
     public void testAlpnCompatibleProtocolsDifferentClientOrder() throws Exception {
         try {
             providerType.activate(this);
-            if (providerType == ProviderType.NPN_DEFAULT) {
+            if (providerType == ProviderType.NPN_JETTY) {
                 // This test only applies to ALPN.
                 throw tlsExtensionNotFound(providerType.protocol());
             }
@@ -314,7 +331,7 @@ public class JdkSslEngineTest extends SSLEngineTest {
         return provider;
     }
 
-    private ApplicationProtocolConfig failingNegotiator(Protocol protocol,
+    private static ApplicationProtocolConfig failingNegotiator(Protocol protocol,
                                                         String... supportedProtocols) {
         return new ApplicationProtocolConfig(protocol,
                 SelectorFailureBehavior.FATAL_ALERT,
@@ -322,7 +339,7 @@ public class JdkSslEngineTest extends SSLEngineTest {
                 supportedProtocols);
     }
 
-    private ApplicationProtocolConfig acceptingNegotiator(Protocol protocol,
+    private static ApplicationProtocolConfig acceptingNegotiator(Protocol protocol,
                                                           String... supportedProtocols) {
         return new ApplicationProtocolConfig(protocol,
                 SelectorFailureBehavior.NO_ADVERTISE,

@@ -564,7 +564,10 @@ public class SslHandler extends ByteToMessageDecoder implements ChannelOutboundH
      * Returns the {@link SSLEngine} which is used by this handler.
      */
     public SSLEngine engine() {
-        return engine;
+        // If its an instanceof Java9SslEngineWrapper we need to unwrap it before returning it to the user
+        // as Java9SslEngineWrapper does not delegate all the new methods that are added to SSLEngine in Java9.
+        return engine instanceof Java9SslEngineWrapper ?
+                ((Java9SslEngineWrapper) engine).getWrappedEngine() : engine;
     }
 
     /**
@@ -573,12 +576,11 @@ public class SslHandler extends ByteToMessageDecoder implements ChannelOutboundH
      * @return the protocol name or {@code null} if application-level protocol has not been negotiated
      */
     public String applicationProtocol() {
-        SSLSession sess = engine().getSession();
-        if (!(sess instanceof ApplicationProtocolAccessor)) {
-            return null;
+        SSLSession sess = engine.getSession();
+        if (sess instanceof ApplicationProtocolAccessor) {
+            return ((ApplicationProtocolAccessor) sess).getApplicationProtocol();
         }
-
-        return ((ApplicationProtocolAccessor) sess).getApplicationProtocol();
+        return null;
     }
 
     /**
@@ -1417,7 +1419,7 @@ public class SslHandler extends ByteToMessageDecoder implements ChannelOutboundH
      * @return {@code true} if and only if the workaround has been applied and thus {@link #handshakeFuture} has been
      *         marked as success by this method
      */
-    private boolean setHandshakeSuccessIfStillHandshaking() {
+    private boolean setHandshakeSuccessIfStillHandshaking() throws SSLException {
         if (!handshakePromise.isDone()) {
             setHandshakeSuccess();
             return true;
@@ -1428,7 +1430,12 @@ public class SslHandler extends ByteToMessageDecoder implements ChannelOutboundH
     /**
      * Notify all the handshake futures about the successfully handshake
      */
-    private void setHandshakeSuccess() {
+    private void setHandshakeSuccess() throws SSLException {
+        if (engine instanceof Java9SslEngineWrapper) {
+            // Call selectProtocol() to ensure our SelectionListener is called.
+            ((Java9SslEngineWrapper) engine).selectProtocolIfClient();
+        }
+
         handshakePromise.trySuccess(ctx.channel());
 
         if (logger.isDebugEnabled()) {
