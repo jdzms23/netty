@@ -159,7 +159,7 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
     private boolean renegotiationPending;
     private boolean receivedShutdown;
     private volatile int destroyed;
-    private String applicationProtocol;
+    private volatile String applicationProtocol;
 
     // Reference Counting
     private final ResourceLeakTracker<ReferenceCountedOpenSslEngine> leak;
@@ -1829,7 +1829,7 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
     }
 
     @Override
-    public synchronized String getApplicationProtocol() {
+    public String getApplicationProtocol() {
         return applicationProtocol;
     }
 

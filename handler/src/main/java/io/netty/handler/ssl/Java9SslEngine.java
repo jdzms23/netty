@@ -23,23 +23,27 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.function.BiFunction;
 
-
 import static io.netty.handler.ssl.SslUtils.toSSLHandshakeException;
+import static io.netty.handler.ssl.JdkApplicationProtocolNegotiator.ProtocolSelectionListener;
 
 final class Java9SslEngine extends JdkSslEngine {
     private final JdkApplicationProtocolNegotiator applicationNegotiator;
 
-    Java9SslEngine(SSLEngine engine, JdkApplicationProtocolNegotiator applicationNegotiator) {
+    static Java9SslEngine newEngine(SSLEngine engine, JdkApplicationProtocolNegotiator applicationProtocolNegotiator) {
+        Java9SslEngine java9SslEngine = new Java9SslEngine(engine, applicationProtocolNegotiator);
+        Java9SslUtils.configureAlpn(java9SslEngine, applicationProtocolNegotiator);
+        return java9SslEngine;
+    }
+
+    private Java9SslEngine(SSLEngine engine, JdkApplicationProtocolNegotiator applicationNegotiator) {
         super(engine);
         this.applicationNegotiator = applicationNegotiator;
-        Java9SslUtils.configureAlpn(this, applicationNegotiator);
     }
 
     private SSLEngineResult verifyProtocolSelection(SSLEngineResult result) throws SSLException {
-        if (result.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.FINISHED && getUseClientMode()) {
+        if (getUseClientMode() && result.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.FINISHED) {
             String protocol = getApplicationProtocol();
-            JdkApplicationProtocolNegotiator.ProtocolSelectionListener selectionListener =
-                    applicationNegotiator.protocolListenerFactory().newListener(
+            ProtocolSelectionListener selectionListener = applicationNegotiator.protocolListenerFactory().newListener(
                             this, applicationNegotiator.protocols());
             try {
                 if (protocol == null || protocol.isEmpty()) {

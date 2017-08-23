@@ -35,8 +35,10 @@ import io.netty.util.internal.StringUtil;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
+import static io.netty.handler.ssl.JdkApplicationProtocolNegotiator.ProtocolSelector;
+
 final class Java9SslUtils {
-    private static final InternalLogger log = InternalLoggerFactory.getInstance(Java9SslUtils.class);
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(Java9SslUtils.class);
     private static final Method SET_APPLICATION_PROTOCOLS;
     private static final Method GET_APPLICATION_PROTOCOL;
     private static final Method GET_HANDSHAKE_APPLICATION_PROTOCOL;
@@ -99,7 +101,7 @@ final class Java9SslUtils {
             });
             getHandshakeApplicationProtocolSelector.invoke(engine);
         } catch (Throwable t) {
-            log.error("Unable to initialize Java9SslUtils, but the detected javaVersion was: {}",
+            logger.error("Unable to initialize Java9SslUtils, but the detected javaVersion was: {}",
                     PlatformDependent.javaVersion(), t);
             getHandshakeApplicationProtocol = null;
             getApplicationProtocol = null;
@@ -118,7 +120,7 @@ final class Java9SslUtils {
     }
 
     static SSLEngine wrapEngine(SSLEngine engine, JdkApplicationProtocolNegotiator applicationNegotiator) {
-        return new Java9SslEngine(engine, applicationNegotiator);
+        return Java9SslEngine.newEngine(engine, applicationNegotiator);
     }
 
     static boolean supportsAlpn() {
@@ -211,9 +213,8 @@ final class Java9SslUtils {
         @Override
         public String apply(SSLEngine sslEngine, List<String> strings) {
 
-            JdkApplicationProtocolNegotiator.ProtocolSelector selector = applicationNegotiator.protocolSelectorFactory()
-                    .newSelector(wrappedEngine, protocols);
-
+            ProtocolSelector selector = applicationNegotiator.protocolSelectorFactory().newSelector(
+                    wrappedEngine, protocols);
             try {
                 String selected = selector.select(strings);
                 return selected == null ? StringUtil.EMPTY_STRING : selected;

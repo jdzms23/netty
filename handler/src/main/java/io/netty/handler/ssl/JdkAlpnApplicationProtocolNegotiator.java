@@ -25,7 +25,8 @@ import javax.net.ssl.SSLEngine;
  */
 public final class JdkAlpnApplicationProtocolNegotiator extends JdkBaseApplicationProtocolNegotiator {
     private static final boolean AVAILABLE = Conscrypt.isAvailable() ||
-            jdkAlpnSupported() || JettyAlpnSslEngine.isAvailable();
+                                             jdkAlpnSupported() ||
+                                             JettyAlpnSslEngine.isAvailable();
 
     private static final SslEngineWrapperFactory ALPN_WRAPPER = AVAILABLE ? new AlpnWrapper() : new FailureWrapper();
 
