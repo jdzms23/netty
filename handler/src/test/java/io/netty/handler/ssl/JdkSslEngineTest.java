@@ -25,6 +25,8 @@ import io.netty.handler.ssl.util.SelfSignedCertificate;
 import java.security.Provider;
 import java.util.ArrayList;
 import java.util.Collection;
+
+import io.netty.util.internal.PlatformDependent;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -79,7 +81,7 @@ public class JdkSslEngineTest extends SSLEngineTest {
         ALPN_JAVA9 {
             @Override
             boolean isAvailable() {
-                return Java9SslUtils.supportsAlpn();
+                return PlatformDependent.javaVersion() >= 9 && Java9SslUtils.supportsAlpn();
             }
 
             @Override

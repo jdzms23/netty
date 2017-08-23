@@ -16,14 +16,17 @@
 package io.netty.handler.ssl;
 
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.util.internal.PlatformDependent;
+
 import javax.net.ssl.SSLEngine;
 
 /**
  * The {@link JdkApplicationProtocolNegotiator} to use if you need ALPN and are using {@link SslProvider#JDK}.
  */
 public final class JdkAlpnApplicationProtocolNegotiator extends JdkBaseApplicationProtocolNegotiator {
-    private static final boolean AVAILABLE = Conscrypt.isAvailable() || Java9SslUtils.supportsAlpn() ||
-            JettyAlpnSslEngine.isAvailable();
+    private static final boolean AVAILABLE = Conscrypt.isAvailable() ||
+            jdkAlpnSupported() || JettyAlpnSslEngine.isAvailable();
+
     private static final SslEngineWrapperFactory ALPN_WRAPPER = AVAILABLE ? new AlpnWrapper() : new FailureWrapper();
 
     /**
@@ -120,7 +123,6 @@ public final class JdkAlpnApplicationProtocolNegotiator extends JdkBaseApplicati
     }
 
     private static final class AlpnWrapper extends AllocatorAwareSslEngineWrapperFactory {
-
         @Override
         public SSLEngine wrapSslEngine(SSLEngine engine, ByteBufAllocator alloc,
                                        JdkApplicationProtocolNegotiator applicationNegotiator, boolean isServer) {
@@ -128,8 +130,8 @@ public final class JdkAlpnApplicationProtocolNegotiator extends JdkBaseApplicati
                 return isServer ? ConscryptAlpnSslEngine.newServerEngine(engine, alloc, applicationNegotiator)
                         : ConscryptAlpnSslEngine.newClientEngine(engine, alloc, applicationNegotiator);
             }
-            if (Java9SslUtils.supportsAlpn()) {
-                return new Java9SslEngineWrapper(engine, applicationNegotiator);
+            if (jdkAlpnSupported()) {
+                return Java9SslUtils.wrapEngine(engine, applicationNegotiator);
             }
             if (JettyAlpnSslEngine.isAvailable()) {
                 return isServer ? JettyAlpnSslEngine.newServerEngine(engine, applicationNegotiator)
@@ -137,5 +139,9 @@ public final class JdkAlpnApplicationProtocolNegotiator extends JdkBaseApplicati
             }
             throw new RuntimeException("Unable to wrap SSLEngine of type " + engine.getClass().getName());
         }
+    }
+
+    static boolean jdkAlpnSupported() {
+        return PlatformDependent.javaVersion() >= 9 && Java9SslUtils.supportsAlpn();
     }
 }
