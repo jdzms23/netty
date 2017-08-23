@@ -15,44 +15,105 @@
  */
 package io.netty.handler.ssl;
 
+import io.netty.util.internal.StringUtil;
+
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLException;
 
 import java.nio.ByteBuffer;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.function.BiFunction;
 
 import static io.netty.handler.ssl.SslUtils.toSSLHandshakeException;
 import static io.netty.handler.ssl.JdkApplicationProtocolNegotiator.ProtocolSelectionListener;
+import static io.netty.handler.ssl.JdkApplicationProtocolNegotiator.ProtocolSelector;
 
 final class Java9SslEngine extends JdkSslEngine {
-    private final JdkApplicationProtocolNegotiator applicationNegotiator;
+    private final ProtocolSelectionListener selectionListener;
+    private final AlpnSelector alpnSelector;
 
-    static Java9SslEngine newEngine(SSLEngine engine, JdkApplicationProtocolNegotiator applicationProtocolNegotiator) {
-        Java9SslEngine java9SslEngine = new Java9SslEngine(engine, applicationProtocolNegotiator);
-        Java9SslUtils.configureAlpn(java9SslEngine, applicationProtocolNegotiator);
-        return java9SslEngine;
+    private final class AlpnSelector implements BiFunction<SSLEngine, List<String>, String> {
+        private final ProtocolSelector selector;
+        private boolean called;
+
+        AlpnSelector(ProtocolSelector selector) {
+            this.selector = selector;
+        }
+
+        @Override
+        public String apply(SSLEngine sslEngine, List<String> strings) {
+            assert !called;
+            called = true;
+
+            try {
+                String selected = selector.select(strings);
+                return selected == null ? StringUtil.EMPTY_STRING : selected;
+            } catch (Exception cause) {
+                // Returning null means we want to fail the handshake.
+                //
+                // See http://download.java.net/java/jdk9/docs/api/javax/net/ssl/
+                // SSLEngine.html#setHandshakeApplicationProtocolSelector-java.util.function.BiFunction-
+                return null;
+            }
+        }
+
+        void checkUnsupported() {
+            if (called) {
+                // ALPN message was received by peer and so apply(...) was called.
+                // See:
+                // http://hg.openjdk.java.net/jdk9/dev/jdk/file/65464a307408/src/
+                // java.base/share/classes/sun/security/ssl/ServerHandshaker.java#l933
+                return;
+            }
+            String protocol = getApplicationProtocol();
+            assert protocol != null;
+
+            if (protocol.isEmpty()) {
+                // ALPN is not supported
+                selector.unsupported();
+            }
+        }
     }
 
-    private Java9SslEngine(SSLEngine engine, JdkApplicationProtocolNegotiator applicationNegotiator) {
+    Java9SslEngine(SSLEngine engine, JdkApplicationProtocolNegotiator applicationNegotiator, boolean isServer) {
         super(engine);
-        this.applicationNegotiator = applicationNegotiator;
+        if (isServer) {
+            selectionListener = null;
+            alpnSelector = new AlpnSelector(applicationNegotiator.protocolSelectorFactory().
+                    newSelector(this, new LinkedHashSet<String>(applicationNegotiator.protocols())));
+            Java9SslUtils.setHandshakeApplicationProtocolSelector(engine, alpnSelector);
+        } else {
+            selectionListener = applicationNegotiator.protocolListenerFactory()
+                    .newListener(this, applicationNegotiator.protocols());
+            alpnSelector = null;
+            Java9SslUtils.setApplicationProtocols(engine, applicationNegotiator.protocols());
+        }
     }
 
     private SSLEngineResult verifyProtocolSelection(SSLEngineResult result) throws SSLException {
-        if (getUseClientMode() && result.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.FINISHED) {
+        if (result.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.FINISHED) {
             String protocol = getApplicationProtocol();
-            ProtocolSelectionListener selectionListener = applicationNegotiator.protocolListenerFactory().newListener(
-                            this, applicationNegotiator.protocols());
-            try {
-                if (protocol == null || protocol.isEmpty()) {
-                    selectionListener.unsupported();
-                } else {
-                    selectionListener.selected(protocol);
+            if (alpnSelector == null) {
+                // This means we are using client-side and
+                try {
+                    assert protocol != null;
+                    if (protocol.isEmpty()) {
+                        // If empty the server did not announce ALPN:
+                        // See:
+                        // http://hg.openjdk.java.net/jdk9/dev/jdk/file/65464a307408/src/java.base/
+                        // share/classes/sun/security/ssl/ClientHandshaker.java#l741
+                        selectionListener.unsupported();
+                    } else {
+                        selectionListener.selected(protocol);
+                    }
+                } catch (Throwable e) {
+                    throw toSSLHandshakeException(e);
                 }
-            } catch (Throwable e) {
-                throw toSSLHandshakeException(e);
+            } else {
+                assert selectionListener == null;
+                alpnSelector.checkUnsupported();
             }
         }
         return result;

@@ -132,7 +132,7 @@ public final class JdkAlpnApplicationProtocolNegotiator extends JdkBaseApplicati
                         : ConscryptAlpnSslEngine.newClientEngine(engine, alloc, applicationNegotiator);
             }
             if (jdkAlpnSupported()) {
-                return Java9SslUtils.wrapEngine(engine, applicationNegotiator);
+                return new Java9SslEngine(engine, applicationNegotiator, isServer);
             }
             if (JettyAlpnSslEngine.isAvailable()) {
                 return isServer ? JettyAlpnSslEngine.newServerEngine(engine, applicationNegotiator)

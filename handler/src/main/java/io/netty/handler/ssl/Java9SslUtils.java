@@ -15,7 +15,6 @@
  */
 package io.netty.handler.ssl;
 
-import static io.netty.util.internal.ObjectUtil.checkNotNull;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
@@ -23,19 +22,13 @@ import javax.net.ssl.SSLParameters;
 import java.lang.reflect.Method;
 import java.security.AccessController;
 import java.security.PrivilegedExceptionAction;
-import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.function.BiFunction;
 
 import io.netty.util.internal.EmptyArrays;
 import io.netty.util.internal.PlatformDependent;
-import io.netty.util.internal.StringUtil;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
-
-import static io.netty.handler.ssl.JdkApplicationProtocolNegotiator.ProtocolSelector;
 
 final class Java9SslUtils {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(Java9SslUtils.class);
@@ -86,12 +79,13 @@ final class Java9SslUtils {
                     return SSLEngine.class.getMethod("setHandshakeApplicationProtocolSelector", BiFunction.class);
                 }
             });
-            setApplicationProtocols.invoke(engine, new BiFunction<SSLEngine, List<String>, String>() {
+            setHandshakeApplicationProtocolSelector.invoke(engine, new BiFunction<SSLEngine, List<String>, String>() {
                 @Override
                 public String apply(SSLEngine sslEngine, List<String> strings) {
                     return null;
                 }
             });
+
             getHandshakeApplicationProtocolSelector =
                     AccessController.doPrivileged(new PrivilegedExceptionAction<Method>() {
                 @Override
@@ -119,20 +113,8 @@ final class Java9SslUtils {
     private Java9SslUtils() {
     }
 
-    static SSLEngine wrapEngine(SSLEngine engine, JdkApplicationProtocolNegotiator applicationNegotiator) {
-        return Java9SslEngine.newEngine(engine, applicationNegotiator);
-    }
-
     static boolean supportsAlpn() {
         return GET_APPLICATION_PROTOCOL != null;
-    }
-
-    static void configureAlpn(Java9SslEngine engine, JdkApplicationProtocolNegotiator applicationNegotiator) {
-        if (!engine.getUseClientMode()) {
-            installSelector(engine, applicationNegotiator);
-        } else {
-            setApplicationProtocols(engine, applicationNegotiator.protocols());
-        }
     }
 
     static String getApplicationProtocol(SSLEngine sslEngine) {
@@ -155,7 +137,7 @@ final class Java9SslUtils {
         }
     }
 
-    private static void setApplicationProtocols(SSLEngine engine, List<String> supportedProtocols) {
+    static void setApplicationProtocols(SSLEngine engine, List<String> supportedProtocols) {
         SSLParameters parameters = engine.getSSLParameters();
 
         String[] protocolArray = supportedProtocols.toArray(EmptyArrays.EMPTY_STRINGS);
@@ -188,43 +170,6 @@ final class Java9SslUtils {
             throw ex;
         } catch (Exception ex) {
             throw new IllegalStateException(ex);
-        }
-    }
-
-    private static void installSelector(Java9SslEngine sslEngine,
-                                        JdkApplicationProtocolNegotiator applicationProtocolNegotiator) {
-        checkNotNull(applicationProtocolNegotiator, "applicationProtocolNegotiator");
-
-        setHandshakeApplicationProtocolSelector(sslEngine.getWrappedEngine(),
-                new AlpnSelector(sslEngine, applicationProtocolNegotiator));
-    }
-
-    private static final class AlpnSelector implements BiFunction<SSLEngine, List<String>, String> {
-        private final Java9SslEngine wrappedEngine;
-        private final JdkApplicationProtocolNegotiator applicationNegotiator;
-        private final Set<String> protocols;
-
-        AlpnSelector(Java9SslEngine wrappedEngine, JdkApplicationProtocolNegotiator applicationNegotiator) {
-            this.wrappedEngine = wrappedEngine;
-            this.applicationNegotiator = applicationNegotiator;
-            protocols = Collections.unmodifiableSet(new LinkedHashSet<String>(applicationNegotiator.protocols()));
-        }
-
-        @Override
-        public String apply(SSLEngine sslEngine, List<String> strings) {
-
-            ProtocolSelector selector = applicationNegotiator.protocolSelectorFactory().newSelector(
-                    wrappedEngine, protocols);
-            try {
-                String selected = selector.select(strings);
-                return selected == null ? StringUtil.EMPTY_STRING : selected;
-            } catch (Exception cause) {
-                // Returning null means we want to fail the handshake.
-                //
-                // See http://download.java.net/java/jdk9/docs/api/javax/net/ssl/
-                // SSLEngine.html#setHandshakeApplicationProtocolSelector-java.util.function.BiFunction-
-                return null;
-            }
         }
     }
 }
